@@ -28,6 +28,9 @@ jobs:
 
       - name: Run scraper
         run: python scraper.py
+        env:
+          GOODREADS_USER_ID: ${{ secrets.GOODREADS_USER_ID }}
+          LETTERBOXD_USERNAME: ${{ secrets.LETTERBOXD_USERNAME }}
 
       - name: Commit & push
         run: |

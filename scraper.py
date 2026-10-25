@@ -9,7 +9,7 @@ each run only fetches what is new.
 
 Usage:
     pip install requests beautifulsoup4 curl_cffi
-    python3 scraper.py
+    GOODREADS_USER_ID=... LETTERBOXD_USERNAME=... python3 scraper.py
 """
 
 import html as htmllib
@@ -28,8 +28,10 @@ from bs4 import BeautifulSoup
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 CONFIG = {
-    "goodreads_user_id": "131953210",
-    "letterboxd_username": "iamonlyme",
+    # Read from GitHub repo secrets (or your shell when running locally) so
+    # your profile IDs aren't written into this public file.
+    "goodreads_user_id": os.environ.get("GOODREADS_USER_ID", "").strip(),
+    "letterboxd_username": os.environ.get("LETTERBOXD_USERNAME", "").strip(),
 
     "max_list_pages": 0,          # 0 = every page of every liked list
     "film_enrich_per_run": 600,   # film pages to fetch for details per run
@@ -366,6 +368,11 @@ def enrich_film(slug):
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
+    missing = [k for k, v in (("GOODREADS_USER_ID", CONFIG["goodreads_user_id"]),
+                              ("LETTERBOXD_USERNAME", CONFIG["letterboxd_username"])) if not v]
+    if missing:
+        sys.exit("Missing " + " and ".join(missing) + ". Add them under the repo's "
+                 "Settings → Secrets and variables → Actions (or export them locally).")
     print(f"HTTP client: {CLIENT}")
     cache = load_cache()
 
