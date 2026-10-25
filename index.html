@@ -47,6 +47,22 @@ header h1 span{color:var(--ac)}
 .ctrl2 input[type=number]{width:84px}
 .ctrl2 label{font-size:12px;color:var(--t3)}
 input:focus,select:focus{border-color:var(--ac)}
+.fbtn{background:var(--s1);border:1px solid var(--bd);border-radius:7px;padding:8px 10px;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fbtn::after{content:" ▾";color:var(--t3)}
+.fbtn.active{border-color:var(--ac);color:var(--ac);background:var(--ac-bg)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chips:empty{display:none}
+.chips{margin-bottom:10px}
+button.lnk{background:none;border:0;cursor:pointer}
+.chips .and{font-size:11px;color:var(--t3)}
+.chip{font-size:12px;padding:3px 9px;border-radius:14px;background:var(--ac-bg);color:var(--ac);cursor:pointer;border:0}
+.chip:hover{text-decoration:line-through}
+.tag[data-f]{cursor:pointer}
+.tag[data-f]:hover{outline:1px solid var(--t3)}
+.pop .opts{max-height:300px;overflow:auto;margin-top:6px}
+.pop .opts label{justify-content:flex-start}
+.pop .opts em{margin-left:auto;font-style:normal;font-size:11px;color:var(--t3)}
+.pop.wide{width:300px}
 .count{font-size:12px;color:var(--t3);margin:6px 0 10px}
 
 .list{display:flex;flex-direction:column;gap:8px;padding-bottom:30px}
@@ -117,10 +133,11 @@ input:focus,select:focus{border-color:var(--ac)}
 
   <div class="ctrl">
     <input id="q" type="search" placeholder="Search title, people, description…" autocomplete="off">
-    <select id="genre"></select>
-    <select id="src"></select>
-    <select id="mine"></select>
+    <button class="fbtn" data-f="genre">Genres</button>
+    <button class="fbtn" data-f="src">Letterboxd lists</button>
+    <button class="fbtn" data-f="mine">My lists</button>
   </div>
+  <div class="chips" id="chips"></div>
   <div class="ctrl2">
     <label>Year</label>
     <input id="yFrom" type="number" placeholder="from" min="1880" max="2100">
@@ -171,22 +188,70 @@ const items = () => tab==="films" ? DATA.films : DATA.books;
   $("statusLine").innerHTML = h;
 })();
 
-// ── dropdowns ──
-function opts(sel, label, values, keep){
-  const cur = keep ? sel.value : "";
-  sel.innerHTML = '<option value="">'+label+'</option>' + values.map(v=>'<option value="'+esc(v)+'">'+esc(v.length>48?v.slice(0,46)+"…":v)+'</option>').join("");
-  if(values.includes(cur)) sel.value = cur;
+// ── multi-select filters (an item must match every selected value) ──
+const SEL = {
+  films:{genre:new Set(), src:new Set(), mine:new Set()},
+  books:{genre:new Set(), src:new Set(), mine:new Set()},
+};
+const sel = () => SEL[tab];
+const LABEL = {genre:"Genres", src:"Letterboxd lists", mine:"My lists"};
+function countPairs(f){
+  const c = {};
+  if(f==="mine"){
+    const pre = tab==="films" ? "f:" : "b:";
+    Object.keys(S.lists).forEach(n=> c[n] = S.lists[n].filter(k=>k.startsWith(pre)).length);
+  } else {
+    items().forEach(x=> ((f==="genre"?x.genres:x.lists)||[]).forEach(v=> c[v]=(c[v]||0)+1));
+  }
+  return Object.keys(c).sort((a,b)=> c[b]-c[a] || a.localeCompare(b)).map(v=>[v,c[v]]);
 }
-function countVals(arr, f){
-  const c = {}; arr.forEach(x=> (f(x)||[]).forEach(v=> c[v]=(c[v]||0)+1));
-  return Object.keys(c).sort((a,b)=> c[b]-c[a] || a.localeCompare(b));
+function updateFilterUI(){
+  const s = sel();
+  for(const n of [...SEL.films.mine, ...SEL.books.mine]) if(!S.lists[n]){ SEL.films.mine.delete(n); SEL.books.mine.delete(n); }
+  document.querySelectorAll(".fbtn").forEach(b=>{
+    const n = s[b.dataset.f].size;
+    b.textContent = LABEL[b.dataset.f] + (n ? " ("+n+")" : "");
+    b.classList.toggle("active", n>0);
+  });
+  const chips = [];
+  ["genre","src","mine"].forEach(f=> s[f].forEach(v=> chips.push('<button class="chip" data-f="'+f+'" data-v="'+esc(v)+'" title="Remove">'+esc(v.length>40?v.slice(0,38)+"…":v)+' ×</button>')));
+  $("chips").innerHTML = chips.length
+    ? chips.join('<span class="and">and</span>') + (chips.length>1 ? '<button class="lnk" id="clearAll">Clear all</button>' : "")
+    : "";
+}
+function filterPop(anchor, f){
+  const vals = countPairs(f), s = sel()[f];
+  const p = openPop(anchor,
+    '<h4>'+LABEL[f]+' · items must match all you tick</h4>'+
+    (vals.length
+      ? '<input type="text" placeholder="Find…" style="width:100%"><div class="opts">'+
+        vals.map(([v,c])=>'<label data-s="'+esc(v.toLowerCase())+'"><input type="checkbox" data-v="'+esc(v)+'"'+(s.has(v)?" checked":"")+'> <span>'+esc(v)+'</span><em>'+c+'</em></label>').join("")+
+        '</div><div class="row"><button class="act" data-clear>Clear</button></div>'
+      : '<p>'+(f==="mine" ? "No lists yet. Use “+ List” on any card." : "Nothing here yet.")+'</p>'));
+  p.classList.add("wide");
+  const r = anchor.getBoundingClientRect();
+  p.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.innerWidth - p.offsetWidth - 8))+"px";
+  const find = p.querySelector("input[type=text]");
+  if(!find) return;
+  find.addEventListener("input", ()=>{
+    const q = find.value.toLowerCase();
+    p.querySelectorAll(".opts label").forEach(l=> l.style.display = l.dataset.s.includes(q) ? "" : "none");
+  });
+  p.addEventListener("change", e=>{
+    const v = e.target.dataset.v; if(v==null) return;
+    e.target.checked ? s.add(v) : s.delete(v);
+    updateFilterUI(); render(true);
+  });
+  p.querySelector("[data-clear]").onclick = ()=>{
+    s.clear(); p.querySelectorAll(".opts input").forEach(i=>i.checked=false);
+    updateFilterUI(); render(true);
+  };
+  if(window.innerWidth > 640) find.focus();
 }
 function setupControls(){
   const F = tab==="films";
-  opts($("genre"), "All genres", countVals(items(), x=>x.genres));
-  if(F){ opts($("src"), "All Letterboxd lists", countVals(items(), x=>x.lists)); $("src").style.display=""; }
-  else { $("src").style.display="none"; $("src").value=""; }
-  refreshMine(false);
+  document.querySelector('.fbtn[data-f="src"]').style.display = F ? "" : "none";
+  refreshMine();
   $("segTodo").textContent = F ? "To watch" : "To read";
   $("segDone").textContent = F ? "Watched" : "Read";
   $("addedWrap").style.display = F ? "none" : "inline-flex";
@@ -195,25 +260,23 @@ function setupControls(){
     : [["added","Recently added"],["title","Title A–Z"],["rating","Highest rated"],["new","Newest"],["old","Oldest"],["short","Shortest"],["long","Longest"],["finished","Recently read"]];
   $("sort").innerHTML = sorts.map(s=>'<option value="'+s[0]+'">Sort: '+s[1]+'</option>').join("");
 }
-function refreshMine(keep){
-  opts($("mine"), "All of my lists", Object.keys(S.lists).sort(), keep);
-}
+function refreshMine(){ updateFilterUI(); }
 
 // ── filtering ──
 function filtered(){
   const q = $("q").value.trim().toLowerCase();
-  const g = $("genre").value, src = $("src").value, mine = $("mine").value;
+  const s = sel(), gs = [...s.genre], ss = tab==="films" ? [...s.src] : [];
+  const ms = [...s.mine].map(n=> new Set(S.lists[n]||[]));
   const yf = +$("yFrom").value || 0, yt = +$("yTo").value || 9999;
   const af = tab==="books" ? $("addedFrom").value : "";
-  const mineSet = mine ? new Set(S.lists[mine]||[]) : null;
   const F = tab==="films";
   let r = items().filter(x=>{
     const k = key(tab,x.id), isDone = !!S.done[k];
     if(status==="todo" && isDone) return false;
     if(status==="done" && !isDone) return false;
-    if(g && !(x.genres||[]).includes(g)) return false;
-    if(src && !(x.lists||[]).includes(src)) return false;
-    if(mineSet && !mineSet.has(k)) return false;
+    if(gs.length && !gs.every(v=> (x.genres||[]).includes(v))) return false;
+    if(ss.length && !ss.every(v=> (x.lists||[]).includes(v))) return false;
+    if(ms.length && !ms.every(set=> set.has(k))) return false;
     if((yf||yt<9999) && (!x.year || x.year<yf || x.year>yt)) return false;
     if(af && (!x.added || x.added < af)) return false;
     if(q){
@@ -223,7 +286,7 @@ function filtered(){
     return true;
   });
   const len = x => F ? x.runtime : x.pages;
-  const s = $("sort").value;
+  const so = $("sort").value;
   const by = {
     title:(a,b)=>a.title.localeCompare(b.title),
     rating:(a,b)=>(b.rating||0)-(a.rating||0),
@@ -235,7 +298,7 @@ function filtered(){
     added:(a,b)=>(b.added||"").localeCompare(a.added||""),
     finished:(a,b)=>(S.done[key(tab,b.id)]||"").localeCompare(S.done[key(tab,a.id)]||""),
   };
-  r.sort(by[s]||by.title);
+  r.sort(by[so]||by.title);
   return r;
 }
 
@@ -263,9 +326,9 @@ function card(x){
   ).filter(Boolean).join(" · ");
   const mineNames = Object.keys(S.lists).filter(n=> S.lists[n].includes(k));
   const src = F ? (x.lists||[]) : [];
-  const tags = mineNames.map(n=>'<span class="tag mine">'+esc(n)+'</span>').join("") +
-    (x.genres||[]).slice(0,3).map(gn=>'<span class="tag">'+esc(gn)+'</span>').join("") +
-    src.slice(0,2).map(l=>'<span class="tag" title="'+esc(l)+'">'+esc(l.length>28?l.slice(0,26)+"…":l)+'</span>').join("") +
+  const tags = mineNames.map(n=>'<span class="tag mine" data-f="mine" data-v="'+esc(n)+'" title="Filter by this list">'+esc(n)+'</span>').join("") +
+    (x.genres||[]).slice(0,6).map(gn=>'<span class="tag" data-f="genre" data-v="'+esc(gn)+'" title="Filter by this genre">'+esc(gn)+'</span>').join("") +
+    src.slice(0,2).map(l=>'<span class="tag" data-f="src" data-v="'+esc(l)+'" title="'+esc(l)+'">'+esc(l.length>28?l.slice(0,26)+"…":l)+'</span>').join("") +
     (src.length>2?'<span class="tag" title="'+esc(src.slice(2).join("\n"))+'">+'+(src.length-2)+' lists</span>':"");
   return '<div class="card'+(isDone?' done':'')+'" data-k="'+esc(k)+'">'+
     (!F && x.img ? '<img class="cover" loading="lazy" src="'+esc(x.img)+'" alt="">' : "")+
@@ -281,7 +344,7 @@ function card(x){
 function render(resetPage){
   if(resetPage) shown = PAGE;
   const r = filtered();
-  $("count").textContent = r.length.toLocaleString()+" "+(tab==="films"?"films":"books");
+  $("count").textContent = r.length.toLocaleString()+" "+(tab==="films"?"film":"book")+(r.length===1?"":"s");
   $("out").innerHTML = r.length ? r.slice(0,shown).map(card).join("") : '<div class="empty">Nothing matches.</div>';
   $("moreBtn").style.display = r.length > shown ? "block" : "none";
 }
@@ -374,11 +437,23 @@ $("statusSeg").onclick = e=>{
   render(true);
 };
 ["q","yFrom","yTo"].forEach(id=> $(id).addEventListener("input", ()=>render(true)));
-["genre","src","mine","sort","addedFrom"].forEach(id=> $(id).addEventListener("change", ()=>render(true)));
+document.querySelectorAll(".fbtn").forEach(b=> b.onclick = e=>{
+  e.stopPropagation();
+  if(pop && pop.dataset.f===b.dataset.f){ closePop(); return; }
+  filterPop(b, b.dataset.f); pop.dataset.f = b.dataset.f;
+});
+$("chips").addEventListener("click", e=>{
+  if(e.target.id==="clearAll"){ ["genre","src","mine"].forEach(f=>sel()[f].clear()); }
+  else { const c = e.target.closest(".chip"); if(!c) return; sel()[c.dataset.f].delete(c.dataset.v); }
+  updateFilterUI(); render(true);
+});
+["sort","addedFrom"].forEach(id=> $(id).addEventListener("change", ()=>render(true)));
 $("moreBtn").onclick = ()=>{ shown += PAGE; render(false); };
 $("settingsBtn").onclick = e=>{ e.stopPropagation(); pop ? closePop() : settingsPop(e.currentTarget); };
 $("out").addEventListener("click", e=>{
   const d = e.target.closest(".desc"); if(d){ d.classList.toggle("open"); return; }
+  const t = e.target.closest(".tag[data-f]");
+  if(t){ sel()[t.dataset.f].add(t.dataset.v); updateFilterUI(); render(true); window.scrollTo({top:0,behavior:"smooth"}); return; }
   const b = e.target.closest("[data-a]"); if(!b) return;
   e.stopPropagation();
   const k = b.closest(".card").dataset.k;

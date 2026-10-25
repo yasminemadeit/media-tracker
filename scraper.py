@@ -200,7 +200,10 @@ def enrich_book(book_id):
         return None
     t = r.text
     genres = []
-    for g in re.findall(r'"__typename":"Genre","name":"([^"]+)"', t):
+    # Prefer this book's own genre block so similar books' genres don't leak in
+    block = re.search(r'"bookGenres":\[(.*?)\]\s*,\s*"', t)
+    for g in re.findall(r'"__typename":"Genre","name":"([^"]+)"', block.group(1) if block else t):
+        g = htmllib.unescape(g)
         if g not in genres:
             genres.append(g)
     if not genres:  # older page layout
@@ -209,7 +212,7 @@ def enrich_book(book_id):
                   soup.select('a[href*="/genres/"]')][:6]
     pm = re.search(r'"numPages":(\d+)', t) or re.search(r"(\d+)\s+pages", t)
     return {
-        "genres": genres[:6],
+        "genres": genres[:8],
         "pages": int(pm.group(1)) if pm else 0,
         "ok": True,
     }
@@ -440,8 +443,11 @@ def main():
     books_out = []
     for b in books:
         d = cache["book_details"].get(b["id"], {})
+        # Your own shelf genres first, then up to 5 more from Goodreads
+        genres, seen = list(b["shelves"]), {s.lower() for s in b["shelves"]}
+        extra = [g for g in d.get("genres", []) if g.lower() not in seen][:5]
         books_out.append({**b,
-                          "genres": d.get("genres") or b["shelves"],
+                          "genres": genres + extra,
                           "pages": b["pages"] or d.get("pages", 0)})
 
     meta = {
