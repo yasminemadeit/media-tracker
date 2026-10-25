@@ -63,6 +63,7 @@ button.lnk{background:none;border:0;cursor:pointer}
 .pop .opts label{justify-content:flex-start}
 .pop .opts em{margin-left:auto;font-style:normal;font-size:11px;color:var(--t3)}
 .pop.wide{width:300px}
+.pop{max-width:330px}
 .count{font-size:12px;color:var(--t3);margin:6px 0 10px}
 
 .list{display:flex;flex-direction:column;gap:8px;padding-bottom:30px}
@@ -115,7 +116,8 @@ button.lnk{background:none;border:0;cursor:pointer}
       <h1>Media <span>Tracker</span></h1>
       <div class="status-line" id="statusLine"></div>
     </div>
-    <div class="hbtns">
+    <div class="hbtns" style="align-items:center">
+      <span class="status-line" id="syncStatus"></span>
       <button class="ghost" id="settingsBtn">Settings</button>
     </div>
   </header>
@@ -163,11 +165,128 @@ const PAGE = 80;
 const KEY = "mediaTracker:v1";
 function loadState(){
   try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s) return s; }catch(e){}
-  return {done:{}, lists:{}, zlib:"1lib.sk"};
+  return {};
 }
+// S.m holds every mark as {v:1|0, t:time}, so two devices can merge mark by mark.
+// S.done and S.lists are derived from it.
+const SEP = "\u001f";
+const DK = k => "d"+SEP+k, LD = n => "L"+SEP+n, LK = (n,k) => "l"+SEP+n+SEP+k;
 let S = loadState();
-S.done = S.done||{}; S.lists = S.lists||{}; S.zlib = S.zlib||"1lib.sk";
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+S.zlib = S.zlib||"1lib.sk"; S.m = S.m||{};
+if(!S.migrated){
+  const now = new Date().toISOString();
+  for(const k in (S.done||{})) S.m[DK(k)] = {v:1, t:S.done[k]||now};
+  for(const n in (S.lists||{})){ S.m[LD(n)] = {v:1,t:now}; S.lists[n].forEach(k=> S.m[LK(n,k)] = {v:1,t:now}); }
+  S.migrated = 1;
+}
+function derive(){
+  const done = {}, lists = {};
+  for(const key in S.m){ const e = S.m[key]; if(e.v && key[0]==="L") lists[key.slice(2)] = []; }
+  for(const key in S.m){
+    const e = S.m[key]; if(!e.v) continue;
+    const p = key.split(SEP);
+    if(p[0]==="d") done[p[1]] = e.t;
+    else if(p[0]==="l" && lists[p[1]]) lists[p[1]].push(p[2]);
+  }
+  S.done = done; S.lists = lists;
+}
+derive();
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify({m:S.m, zlib:S.zlib, theme:S.theme, migrated:1})); }catch(e){}
+}
+function put(key, v){
+  S.m[key] = {v: v?1:0, t: new Date().toISOString()};
+  derive(); save(); scheduleSync();
+}
+function mergeIn(remote){
+  for(const key in remote){
+    const r = remote[key], l = S.m[key];
+    if(r && typeof r.t==="string" && (!l || r.t > l.t)) S.m[key] = r;
+  }
+  derive();
+}
+
+// ── GitHub sync ──
+const SYNC_KEY = "mediaTracker:sync";
+let G = {};
+try{ G = JSON.parse(localStorage.getItem(SYNC_KEY)) || {}; }catch(e){}
+G.branch = G.branch || "tracker-state"; G.path = G.path || "state.json";
+function saveSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(G)); }catch(e){} }
+function guessRepo(){
+  const h = location.hostname.match(/^([^.]+)\.github\.io$/i);
+  const seg = location.pathname.split("/").filter(Boolean)[0];
+  return h ? h[1]+"/"+(seg && !seg.includes(".") ? seg : h[1]+".github.io") : "";
+}
+const b64enc = s => btoa(unescape(encodeURIComponent(s)));
+const b64dec = s => decodeURIComponent(escape(atob(s.replace(/\s/g,""))));
+function ghErr(r){
+  return new Error(r.status===401 ? "GitHub rejected the token"
+    : r.status===403 ? "token doesn't have write access to "+G.repo
+    : r.status===404 ? "can't find "+G.repo+" with this token"
+    : "GitHub error "+r.status);
+}
+function gh(method, path, body){
+  return fetch("https://api.github.com/repos/"+G.repo+path, {
+    method, cache:"no-store",
+    headers:{Authorization:"Bearer "+G.token, Accept:"application/vnd.github+json"},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+let branchReady = false;
+async function ensureBranch(){
+  if(branchReady) return;
+  let r = await gh("GET", "/git/ref/heads/"+G.branch);
+  if(!r.ok){
+    if(r.status!==404) throw ghErr(r);
+    const repo = await gh("GET", ""); if(!repo.ok) throw ghErr(repo);
+    const def = (await repo.json()).default_branch;
+    const base = await gh("GET", "/git/ref/heads/"+def); if(!base.ok) throw ghErr(base);
+    r = await gh("POST", "/git/refs", {ref:"refs/heads/"+G.branch, sha:(await base.json()).object.sha});
+    if(!r.ok && r.status!==422) throw ghErr(r);
+  }
+  branchReady = true;
+}
+let syncing = false, syncAgain = false, syncTimer = null, syncMsg = "";
+function setSync(msg, bad){
+  syncMsg = msg;
+  const el = $("syncStatus"); if(!el) return;
+  el.textContent = msg; el.style.color = bad ? "var(--b1)" : "";
+}
+function scheduleSync(){
+  if(!G.token) return;
+  clearTimeout(syncTimer); syncTimer = setTimeout(sync, 1500);
+  setSync("Saving…");
+}
+async function sync(){
+  if(!G.token || !G.repo) return;
+  if(syncing){ syncAgain = true; return; }
+  syncing = true; setSync("Syncing…");
+  try{
+    await ensureBranch();
+    for(let attempt=0; attempt<3; attempt++){
+      const r = await gh("GET", "/contents/"+G.path+"?ref="+G.branch);
+      let sha = null, remote = {};
+      if(r.ok){ const j = await r.json(); sha = j.sha; remote = (JSON.parse(b64dec(j.content))||{}).m || {}; }
+      else if(r.status!==404) throw ghErr(r);
+      mergeIn(remote); save(); updateFilterUI(); render(false);
+      const needsPush = Object.keys(S.m).some(k=> !remote[k] || S.m[k].t > remote[k].t);
+      if(!needsPush) break;
+      const w = await gh("PUT", "/contents/"+G.path, {
+        message:"Update tracker state", branch:G.branch,
+        content: b64enc(JSON.stringify({m:S.m})), ...(sha ? {sha} : {}),
+      });
+      if(w.ok) break;
+      if(w.status!==409 && w.status!==422) throw ghErr(w);  // someone else wrote first: merge and retry
+    }
+    G.last = new Date().toISOString(); saveSync();
+    setSync("Synced ✓");
+  }catch(e){
+    setSync("Sync failed: "+(e.message||"offline"), true);
+  }finally{
+    syncing = false;
+    if(syncAgain){ syncAgain = false; sync(); }
+  }
+}
 
 // ── view state ──
 let tab = "films", status = "todo", shown = PAGE;
@@ -369,16 +488,15 @@ function listPop(anchor, k){
     '<div class="row"><input type="text" placeholder="New list name" maxlength="60"><button class="act">Add</button></div>');
   p.addEventListener("change", e=>{
     const n = e.target.dataset.n; if(n==null) return;
-    const L = S.lists[n];
-    if(e.target.checked){ if(!L.includes(k)) L.push(k); } else S.lists[n] = L.filter(v=>v!==k);
-    save(); render(false);
+    put(LK(n,k), e.target.checked); render(false);
   });
   const inp = p.querySelector("input[type=text]");
   const add = ()=>{
     const n = inp.value.trim(); if(!n) return;
-    S.lists[n] = S.lists[n]||[]; if(!S.lists[n].includes(k)) S.lists[n].push(k);
+    if(!S.lists[n]) put(LD(n), 1);
+    put(LK(n,k), 1);
     const top = p.style.top, left = p.style.left;
-    save(); refreshMine(true); render(false); listPop(anchor,k);
+    refreshMine(true); render(false); listPop(anchor,k);
     pop.style.top = top; pop.style.left = left;
   };
   p.querySelector("button").addEventListener("click", add);
@@ -393,14 +511,40 @@ function settingsPop(anchor){
       '<button class="act" data-th="">Auto</button><button class="act" data-th="light">Light</button><button class="act" data-th="dark">Dark</button></div>'+
     '<h4 style="margin-top:12px">My lists</h4>'+
     (names.length ? names.map(n=>'<label style="justify-content:space-between">'+esc(n)+' <span style="color:var(--t3)">'+S.lists[n].length+' · <a href="#" data-del="'+esc(n)+'" style="color:var(--b1)">delete</a></span></label>').join("") : '<p>None yet. Use “+ List” on any film or book.</p>')+
+    '<h4 style="margin-top:12px">Sync with GitHub</h4>'+
+    (G.token
+      ? '<p style="margin-top:0">Saving to <b>'+esc(G.repo)+'</b> (branch '+esc(G.branch)+').<br>'+esc(syncMsg||"")+(G.last?' · last '+esc(new Date(G.last).toLocaleString()):"")+'</p>'+
+        '<div class="row"><button class="act" id="syncNow">Sync now</button><button class="act" id="syncOff">Disconnect</button></div>'
+      : '<p style="margin-top:0">Saves your marks and lists to your repo so every device sees them. '+
+        '<a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener" style="color:var(--ac)">Create a token ↗</a>: '+
+        'Repository access → Only select repositories → your tracker repo; Permissions → Contents → Read and write.</p>'+
+        '<div class="row"><input type="text" id="ghRepo" placeholder="owner/repo" value="'+esc(G.repo||guessRepo())+'"></div>'+
+        '<div class="row"><input type="password" id="ghTok" placeholder="Paste token (github_pat_…)"><button class="act" id="syncOn">Connect</button></div>')+
     '<h4 style="margin-top:12px">Backup</h4>'+
-    '<p style="margin-top:0">Watched/read marks and your lists are saved in this browser. Export to move them to another device.</p>'+
-    '<div class="row"><button class="act" id="exp">Export</button><button class="act" id="imp">Import</button><input type="file" id="impFile" accept=".json" hidden></div>');
+    '<div class="row" style="margin-top:0"><button class="act" id="exp">Export</button><button class="act" id="imp">Import</button><input type="file" id="impFile" accept=".json" hidden></div>');
+  if(G.token){
+    p.querySelector("#syncNow").onclick = async ()=>{ await sync(); settingsPop(anchor); };
+    p.querySelector("#syncOff").onclick = ()=>{ delete G.token; saveSync(); setSync(""); settingsPop(anchor); };
+  } else {
+    p.querySelector("#syncOn").onclick = async ()=>{
+      const repo = p.querySelector("#ghRepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\/+$/,"");
+      const tok = p.querySelector("#ghTok").value.trim();
+      if(!/^[\w.-]+\/[\w.-]+$/.test(repo) || !tok) return;
+      G.repo = repo; G.token = tok; branchReady = false; saveSync();
+      await sync();
+      if(/failed/.test(syncMsg)){ const m = syncMsg; delete G.token; saveSync(); setSync(m, true); }
+      settingsPop(anchor);
+    };
+  }
   p.querySelector("#zlSave").onclick = ()=>{ const v = p.querySelector("#zl").value.trim().replace(/^https?:\/\//,"").replace(/\/.*$/,""); if(v){ S.zlib=v; save(); render(false); closePop(); } };
   p.querySelectorAll("[data-th]").forEach(b=> b.onclick = ()=>{ setTheme(b.dataset.th); });
-  p.querySelectorAll("[data-del]").forEach(a=> a.onclick = e=>{ e.preventDefault(); delete S.lists[a.dataset.del]; save(); refreshMine(true); render(false); settingsPop(anchor); });
+  p.querySelectorAll("[data-del]").forEach(a=> a.onclick = e=>{
+    e.preventDefault(); const n = a.dataset.del;
+    (S.lists[n]||[]).forEach(k=> put(LK(n,k), 0)); put(LD(n), 0);
+    refreshMine(true); render(false); settingsPop(anchor);
+  });
   p.querySelector("#exp").onclick = ()=>{
-    const blob = new Blob([JSON.stringify(S,null,1)],{type:"application/json"});
+    const blob = new Blob([JSON.stringify({m:S.m, zlib:S.zlib})],{type:"application/json"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
     a.download = "media-tracker-backup-"+new Date().toISOString().slice(0,10)+".json"; a.click();
   };
@@ -410,10 +554,13 @@ function settingsPop(anchor){
     f.text().then(t=>{
       try{
         const inc = JSON.parse(t);
-        Object.assign(S.done, inc.done||{});
-        for(const n in (inc.lists||{})){ S.lists[n] = Array.from(new Set([...(S.lists[n]||[]), ...inc.lists[n]])); }
+        if(inc.m) mergeIn(inc.m);
+        else {  // older backup format
+          for(const k in (inc.done||{})) put(DK(k), 1);
+          for(const n in (inc.lists||{})){ if(!S.lists[n]) put(LD(n),1); inc.lists[n].forEach(k=> put(LK(n,k),1)); }
+        }
         if(inc.zlib) S.zlib = inc.zlib;
-        save(); refreshMine(true); render(false); closePop();
+        save(); scheduleSync(); refreshMine(true); render(false); closePop();
       }catch(err){ alert("That file isn't a Media Tracker backup."); }
     });
   };
@@ -458,14 +605,16 @@ $("out").addEventListener("click", e=>{
   e.stopPropagation();
   const k = b.closest(".card").dataset.k;
   if(b.dataset.a==="done"){
-    if(S.done[k]) delete S.done[k]; else S.done[k] = new Date().toISOString();
-    save(); render(false);
+    put(DK(k), !S.done[k]); render(false);
   } else listPop(b, k);
 });
 document.addEventListener("click", e=>{ if(pop && !pop.contains(e.target)) closePop(); });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") closePop(); });
 
 setupControls(); render(true);
+if(G.token){ sync(); }
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") sync(); });
+window.addEventListener("pagehide", ()=>{ if(syncTimer){ clearTimeout(syncTimer); sync(); } });
 })();
 </script>
 </body>
