@@ -759,5 +759,3 @@ def _esc(s):
 
 if __name__ == "__main__":
     run_scraper()
-'''
-
