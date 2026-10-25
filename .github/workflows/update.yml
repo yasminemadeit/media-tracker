@@ -2,15 +2,20 @@ name: Update Media Tracker
 
 on:
   schedule:
-    - cron: '0 8 * * *'   # daily at 8am UTC
-  workflow_dispatch:       # manual trigger button
+    - cron: '17 */6 * * *'   # every 6 hours
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: update
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -19,7 +24,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4 curl_cffi
 
       - name: Run scraper
         run: python scraper.py
@@ -28,6 +33,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html data.json
+          git add data.js data.json
           git diff --staged --quiet || git commit -m "Update media tracker data"
           git push
