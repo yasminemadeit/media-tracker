@@ -34,8 +34,9 @@ CONFIG = {
     "letterboxd_username": os.environ.get("LETTERBOXD_USERNAME", "").strip(),
 
     "max_list_pages": 0,          # 0 = every page of every liked list
-    "film_enrich_per_run": 600,   # film pages to fetch for details per run
-    "book_enrich_per_run": 300,   # book pages to fetch for genres/pages per run
+    "film_enrich_per_run": 2000,  # film pages to fetch for details per run
+    "book_enrich_per_run": 2000,  # book pages to fetch for genres/pages per run
+    "time_budget_min": 100,       # stop fetching details after this long; next run continues
     "request_delay": 0.4,         # seconds between requests
     "description_chars": 700,     # trim descriptions to keep the page light
 }
@@ -43,6 +44,7 @@ CONFIG = {
 CACHE_FILE = "data.json"
 OUT_FILE = "data.js"
 ERRORS = []
+START = time.time()
 
 # ─── HTTP ────────────────────────────────────────────────────────────────────
 # curl_cffi mimics a real Chrome browser, which gets past the bot protection
@@ -222,10 +224,26 @@ def enrich_book(book_id):
 
 # ─── Letterboxd ──────────────────────────────────────────────────────────────
 
-def lb_page(url):
-    r = fetch(url)
+ALT_BROWSERS = ["safari", "edge", "chrome120", "firefox"]
+
+
+def lb_page(url, quiet=False):
+    """Fetch a Letterboxd page; if blocked, retry posing as other browsers."""
+    r = fetch(url, retries=1)
+    if r is not None and r.status_code in (403, 503) and CLIENT == "curl_cffi":
+        for b in ALT_BROWSERS:
+            try:
+                time.sleep(1)
+                r2 = http.get(url, impersonate=b, timeout=30)
+            except Exception:
+                continue
+            if r2.status_code < 400:
+                r = r2
+                break
     if r is not None and r.status_code in (403, 503):
-        ERRORS.append(f"Letterboxd blocked the request (HTTP {r.status_code}) using {CLIENT}")
+        if not quiet:
+            path = url.replace("https://letterboxd.com", "")
+            ERRORS.append(f"Letterboxd blocked {path} (HTTP {r.status_code})")
         return None
     return BeautifulSoup(r.text, "html.parser") if ok(r) else None
 
@@ -277,16 +295,60 @@ def scrape_film_list(base_url):
     return films
 
 
+LIKED_FILE = "liked_lists.txt"
+
+
+def read_liked_file():
+    out = []
+    if os.path.exists(LIKED_FILE):
+        with open(LIKED_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                url, _, name = line.partition("|")
+                url = url.strip()
+                if "/list/" in url:
+                    out.append((name.strip() or url.rstrip("/").split("/")[-1], url))
+    return out
+
+
+def write_liked_file(lists):
+    with open(LIKED_FILE, encoding="utf-8") as f:
+        header = [l for l in f.read().splitlines() if l.startswith("#")]
+    with open(LIKED_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(header + [f"{u} | {n}" for n, u in lists]) + "\n")
+
+
 def scrape_liked_lists(user):
     print("[3/5] Letterboxd liked lists")
+    saved = read_liked_file()
+    lists = scrape_liked_lists_page(user)
+    if lists is None:
+        print(f"  liked-lists page blocked; using {LIKED_FILE} ({len(saved)} lists)")
+        ERRORS.append(f"Letterboxd blocked your liked-lists page, so the {len(saved)} lists in "
+                      f"{LIKED_FILE} were used. Add newly liked lists to that file.")
+        return saved
+    # Keep everything already in the file (with its tidier names) and add new
+    # ones. Lists are never removed automatically; delete a line to drop one.
+    known = {u for _, u in saved}
+    lists = saved + [(n, u) for n, u in lists if u not in known]
+    if len(lists) > len(saved) and os.path.exists(LIKED_FILE):
+        write_liked_file(lists)
+    print(f"  {len(lists)} lists")
+    return lists or saved
+
+
+def scrape_liked_lists_page(user):
+    """All liked lists from the profile, or None if Letterboxd blocks it."""
     lists, page = [], 1
     while True:
         url = f"https://letterboxd.com/{user}/likes/lists/"
         if page > 1:
             url += f"page/{page}/"
-        soup = lb_page(url)
+        soup = lb_page(url, quiet=True)
         if soup is None:
-            break
+            return None
         before = len(lists)
         for a in soup.find_all("a", href=re.compile(r"^/[^/]+/list/[^/]+/?$")):
             name = a.get_text(" ", strip=True)
@@ -296,7 +358,6 @@ def scrape_liked_lists(user):
         if len(lists) == before or not soup.select_one("a.next"):
             break
         page += 1
-    print(f"  {len(lists)} lists")
     return lists
 
 
@@ -407,25 +468,38 @@ def main():
 
     # Details, a batch per run (watchlist first)
     print("[5/5] Fetching details")
-    watch_slugs = [s for s, _ in watch]
-    todo = [s for s in watch_slugs + list(film_lists) if s not in cache["films"]]
-    todo = list(dict.fromkeys(todo))[: CONFIG["film_enrich_per_run"]]
-    for i, slug in enumerate(todo, 1):
-        d = enrich_film(slug)
-        if d:
-            cache["films"][slug] = d
-        if i % 50 == 0:
-            print(f"  films {i}/{len(todo)}")
-            save_cache(cache)
+    def needs(store, key):
+        # Not fetched yet, or fetched without genres (retry up to 3 times)
+        d = store.get(key)
+        return d is None or (not d.get("genres") and d.get("tries", 1) < 3)
 
-    btodo = [b["id"] for b in books if b["id"] and b["id"] not in cache["book_details"]]
+    watch_slugs = [s for s, _ in watch]
+    todo = [s for s in dict.fromkeys(watch_slugs + list(film_lists)) if needs(cache["films"], s)]
+    todo = todo[: CONFIG["film_enrich_per_run"]]
+    btodo = [b["id"] for b in books if b["id"] and needs(cache["book_details"], b["id"])]
     btodo = btodo[: CONFIG["book_enrich_per_run"]]
-    for i, bid in enumerate(btodo, 1):
-        d = enrich_book(bid)
+    print(f"  queue: {len(todo)} films, {len(btodo)} books")
+
+    # Alternate films and books so neither starves, within the time budget
+    queue = []
+    for i in range(max(len(todo), len(btodo))):
+        if i < len(todo):
+            queue.append(("film", todo[i]))
+        if i < len(btodo):
+            queue.append(("book", btodo[i]))
+    deadline = START + CONFIG["time_budget_min"] * 60
+    for n, (kind, key) in enumerate(queue, 1):
+        if time.time() > deadline:
+            print(f"  time budget reached after {n - 1} pages; the next run continues")
+            break
+        store = cache["films"] if kind == "film" else cache["book_details"]
+        tries = (store.get(key) or {}).get("tries", 0)
+        d = enrich_film(key) if kind == "film" else enrich_book(key)
         if d:
-            cache["book_details"][bid] = d
-        if i % 50 == 0:
-            print(f"  books {i}/{len(btodo)}")
+            d["tries"] = tries + 1
+            store[key] = d
+        if n % 100 == 0:
+            print(f"  {n}/{len(queue)}")
             save_cache(cache)
 
     # Build output

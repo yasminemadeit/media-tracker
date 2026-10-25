@@ -1,0 +1,58 @@
+# Letterboxd lists to track, one per line:  URL | name
+# The scraper refreshes this from your "liked lists" page when Letterboxd allows it.
+# If that page is blocked, it uses this file, so you can add a list here by hand.
+https://letterboxd.com/clairacurtis/list/good-for-her-cinematic-universe/ | "Good For Her" Cinematic Universe
+https://letterboxd.com/fatalcfilm/list/slice-of-life-cinema-but-good/ | 'slice-of-life' cinema but good
+https://letterboxd.com/trevorwang/list/lgbtq/ | LGBTQ+ 🌈
+https://letterboxd.com/magrosleau/list/psychosexual-dramas-nihilistic-fever-dreams/ | Psychosexual dramas, nihilistic fever dreams & surrealism with a touch of humour
+https://letterboxd.com/francisfcoppola/list/movies-that-i-highly-recommend/ | Movies That I Highly Recommend
+https://letterboxd.com/darkestparadise/list/definition-of-girly-classics/ | definition of girly classics 🎀
+https://letterboxd.com/adaydreaming/list/feeling-lost-in-your-20s/ | feeling lost in your 20's
+https://letterboxd.com/jimir/list/john-waters/ | John Waters
+https://letterboxd.com/meagan/list/stuff-by-women-about-women/ | Stuff by women, about women
+https://letterboxd.com/ebbcinemaflow/list/relationships/ | Relationships (Rebecca Martin Fagerholm)
+https://letterboxd.com/existentialjeny/list/relationships/ | Relationships (ExistentialJeny)
+https://letterboxd.com/official/list/top-250-films-with-the-most-fans/ | Top 250 Films with the Most Fans
+https://letterboxd.com/fcbarcelona/list/movies-everyone-should-watch-at-least-once/ | Movies everyone should watch at least once during their lifetime
+https://letterboxd.com/willcarper/list/cool/ | COOL
+https://letterboxd.com/girlsgutsgiallo/list/dirtbag-dykes/ | Dirtbag Dykes
+https://letterboxd.com/roofcoogar/list/cinematography-1/ | [cinematography]
+https://letterboxd.com/focus/list/cinematography/ | Cinematography (focus)
+https://letterboxd.com/pykye515/list/korean-films-a-list-of-good-korean-films/ | Korean Films - A List of Good Korean Films
+https://letterboxd.com/kun/list/when-youre-young-vibrant-and-lost-in-this/ | When You're Young, Vibrant, and Lost in This World
+https://letterboxd.com/cineronin/list/top-100-asian-cinema-of-all-time/ | Top 100 Asian Cinema of all time
+https://letterboxd.com/bfi/list/sight-and-sounds-50-best-films-of-2022/ | Sight and Sound's 50 best films of 2022
+https://letterboxd.com/elihayes/list/400-strange-films-the-mad-mad-glory-of-cinema/ | 400+ Strange Films: The Mad, Mad Glory of Cinema
+https://letterboxd.com/sightsoundmag/list/sight-and-sounds-greatest-films-of-all-time/ | Sight and Sound's Greatest Films of All Time – 2022
+https://letterboxd.com/etolkin/list/filmlist:28697007/ | VISUALLY INSANE
+https://letterboxd.com/arilee4/list/deep-meditative-films/ | Deep and meditative films
+https://letterboxd.com/hibiscus/list/the-greatest-shorts-of-all-timeaka-some-relatively/ | THE GREATEST SHORTS OF ALL TIME!!!!
+https://letterboxd.com/hibiscus/list/movies-for-meditation/ | Movies for Meditation
+https://letterboxd.com/hibiscus/list/the-ultimate-i-dont-care-about-documentaries/ | The Ultimate "I Don't Care About Documentaries" List Of Documentaries
+https://letterboxd.com/hibiscus/list/taiwanese-films-that-make-you-go-oh-shit/ | Taiwanese Films That Make You Go "Oh shit, why don't I always watch Taiwanese films?"
+https://letterboxd.com/hibiscus/list/japanese-films-that-will-blow-your-mind-and/ | Japanese Films That Will Blow Your Mind
+https://letterboxd.com/hibiscus/list/innovative-narratives-films-that-push-the/ | Innovative Narratives: Films that Push The boundaries of Storytelling
+https://letterboxd.com/agautam/list/story/ | Story
+https://letterboxd.com/vinnir/list/films-shaped-by-dialogues/ | Films shaped by dialogues
+https://letterboxd.com/persianmonkey/list/dialogue/ | Dialogue
+https://letterboxd.com/fat_alberta/list/cinematography/ | Cinematography (fat_alberta)
+https://letterboxd.com/afeleytar/list/pov-you-are-an-anime-elitist/ | POV: You are an anime elitist
+https://letterboxd.com/jeremy_white/list/anime/ | Anime (jeremy_white)
+https://letterboxd.com/jumpy/list/letterboxds-official-top-250-anime-tv-miniseries/ | Letterboxd's "Official" Top 250 Anime TV Miniseries
+https://letterboxd.com/laserviettedu/list/anime/ | anime (laserviettedu)
+https://letterboxd.com/adhdsoundsystem/list/black-filmmakers/ | BLACK FILMMAKERS
+https://letterboxd.com/rymer/list/black/ | BLACK
+https://letterboxd.com/toriymoi/list/if-you-like-american-film-watch-foreign-film/ | If you like (American film) watch (foreign film)
+https://letterboxd.com/official/list/top-250-documentary-films/ | Top 250 Documentary Films
+https://letterboxd.com/stottiain/list/got-15-minutes-to-spare/ | Got 15 Minutes to Spare?
+https://letterboxd.com/badboy_ap/list/best-south-korean-films-of-all-time-global/ | Best South Korean Films Of All Time: Global Audience Vote
+https://letterboxd.com/hamburgersplash/list/weirdo-watchlist/ | Weirdo Watchlist
+https://letterboxd.com/kun/list/befriending-the-lyrical-loneliness/ | Befriending the lyrical loneliness...
+https://letterboxd.com/official/list/top-250-animated-films/ | Top 250 Animated Films
+https://letterboxd.com/stautis/list/good-films-90-minutes-or-less/ | Good Films, 90 Minutes or Less
+https://letterboxd.com/oneohtrix/list/writers-guild-of-america-101-greatest-screenplays/ | Writers Guild of America: 101 Greatest Screenplays of the 21st Century
+https://letterboxd.com/cinemaparadisa/list/comfort-movies/ | Comfort Movies
+https://letterboxd.com/official/list/letterboxds-top-500-films/ | Letterboxd's Top 500 Films
+https://letterboxd.com/peterstanley/list/1001-movies-you-must-see-before-you-die/ | 1001 Movies You Must See Before You Die
+https://letterboxd.com/andredenervaux/list/youre-not-the-same-person-once-the-film-has/ | You're not the same person once the film has finished
+https://letterboxd.com/jacobmazur/list/film-school/ | FILM SCHOOL
